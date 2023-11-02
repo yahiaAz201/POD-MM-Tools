@@ -25,7 +25,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
 
-const port = 3001;
+const port = env.process.PORT || 3001;
 
 app.use("/user", userRouter);
 app.use("/admin", adminRouter);
