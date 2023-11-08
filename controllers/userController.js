@@ -5,6 +5,8 @@ const User = require("../models/User");
 const Subscriptions = require("../models/Subscriptions");
 const { Error } = require("mongoose");
 
+const { instances, loadUsers } = require("../websocket.js");
+
 const jwt_secret = process.env.JWT_SECRET;
 
 const signin = async (req, res) => {
@@ -23,7 +25,34 @@ const signin = async (req, res) => {
         "Sorry, but your account has been banned from accessing this service.",
     });
 
-  user = _.pick(user, "_id", "email");
+  const isOnline = instances.get({ _id: user._id.toString() });
+
+  if (isOnline && isOnline != []) {
+    user.banned = true;
+    await user.save();
+    instances.update({ _id: user._id.toString() }, { banned: true });
+    isOnline["socket"].send(
+      JSON.stringify({ event: "reset_cookies", payload: null })
+    );
+    const admins = instances.get({ role: "admin" }, { multi: true });
+    admins.forEach((admin) => {
+      if (!admin) return;
+      admin["socket"].send(
+        JSON.stringify({
+          event: "banned_users",
+          payload: user._id.toString(),
+        })
+      );
+    });
+    loadUsers();
+    return res.status(401).json({
+      success: false,
+      error:
+        "Sorry, but your account has been banned from accessing this service. for sharing your account info",
+    });
+  }
+
+  user = _.pick(user, "_id", "email", "banned");
   const token = jwt.sign(user, jwt_secret, { expiresIn: "30d" });
   res.send({
     success: true,
@@ -86,38 +115,34 @@ const signup = async (req, res) => {
 
 const getMySubscriptions = async (req, res) => {
   try {
-    const token = req.headers["token"];
-    if (!token) throw new Error("token must be provided");
-    let user = jwt.verify(token, jwt_secret);
-    user = await User.findOne({ _id: user._id });
-
-    if (!user) throw new Error("no user was found");
-
-    if (user.banned)
-      return res.status(401).json({
-        success: false,
-        error:
-          "Sorry, but your account has been banned from accessing this service.",
-      });
+    let user = req.user;
 
     user = await user.populate({
       path: "subscriptions",
       select: "_id name website cookies",
       transform: (subscription) => {
         if (user.mySubscriptions.includes(subscription._id.toString())) {
-          return subscription;
+          const subscriptionObject = subscription.toObject();
+          subscriptionObject["subscribed"] = true;
+          return subscriptionObject;
         } else {
           const { cookies, ...subscriptionWithoutCookies } =
             subscription.toObject();
-          subscriptionWithoutCookies["cookies"] = null;
+          subscriptionWithoutCookies["subscribed"] = false;
           return subscriptionWithoutCookies;
         }
       },
     });
 
+    console.log(user.subscriptions);
+
+    const mySubscriptions = user.subscriptions.map((subscription) => {
+      return _.pick(subscription, "_id", "name", "website", "subscribed");
+    });
+
     res.send({
       success: true,
-      mySubscriptions: user.subscriptions,
+      mySubscriptions: mySubscriptions,
     });
   } catch (error) {
     res.status(500).send({
@@ -127,4 +152,60 @@ const getMySubscriptions = async (req, res) => {
   }
 };
 
-module.exports = { signin, signup, getMySubscriptions };
+const loadSubscription = async (req, res) => {
+  const { id } = req.params;
+  const user = req.user;
+
+  if (!id)
+    return res.status(400).send({
+      success: false,
+      error: "bad request format subscription id are required",
+    });
+
+  const { subscriptions } = await user.populate({
+    path: "subscriptions",
+    select: "_id name website cookies",
+    transform: (subscription) => {
+      if (user.mySubscriptions.includes(subscription._id.toString())) {
+        return subscription;
+      } else {
+        const { cookies, ...subscriptionWithoutCookies } =
+          subscription.toObject();
+        subscriptionWithoutCookies["cookies"] = null;
+        return subscriptionWithoutCookies;
+      }
+    },
+  });
+
+  const [subscription] = subscriptions.filter(
+    (subscription) => subscription._id == id
+  );
+
+  if (!subscription["cookies"])
+    return res.status(405).send({
+      success: false,
+      error: "you are not subscribed to this subscription",
+    });
+
+  res.send({
+    success: true,
+    subscription,
+  });
+};
+
+const listSubscriptions = async (req, res) => {
+  let subscriptions = await Subscriptions.find();
+  subscriptions = subscriptions.map((subscription) => {
+    const { _id, name, website } = subscription;
+    return { _id, name, website };
+  });
+  res.send(subscriptions);
+};
+
+module.exports = {
+  signin,
+  signup,
+  getMySubscriptions,
+  loadSubscription,
+  listSubscriptions,
+};

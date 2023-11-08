@@ -8,9 +8,9 @@ const cors = require("cors");
 const app = express();
 const server = http.createServer(app, { setTimeout: null });
 
-const wss = require("./websocket");
+const { socketIo } = require("./websocket");
 
-wss(server);
+socketIo(server);
 
 const userRouter = require("./routes/user");
 const adminRouter = require("./routes/admin");

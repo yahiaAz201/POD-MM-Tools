@@ -23,16 +23,16 @@ class Store {
   }
 
   update(query, update, options) {
-    const index = this.items.findIndex((item) => {
+    const items = this.items.map((item) => {
       for (const key in query) {
         if (item[key] !== query[key]) {
-          return false;
+          return item;
         }
       }
-      return true;
+      return { ...item, ...update };
     });
-    if (index == -1) return null;
-    this.items[index] = { ...this.items[index], ...update };
+
+    this.items = items;
     return this.items;
   }
 
