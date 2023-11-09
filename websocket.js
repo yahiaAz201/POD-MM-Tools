@@ -6,6 +6,7 @@ const User = require("./models/User");
 const Storage = require("./shared/Storage");
 
 const instances = new Storage();
+const notifications = new Storage();
 
 const socketIo = (server) => {
   const wss = new WebSocket.Server({ server: server });
@@ -26,7 +27,7 @@ const join = async ({ socket, req, data }) => {
   instance["key"] = key;
   instance["socket"] = socket;
 
-  const user = instances.get({ _id: instance._id });
+  let user = instances.get({ _id: instance._id });
 
   if (user) {
     await User.updateOne({ _id: user._id }, { banned: true });
@@ -41,7 +42,8 @@ const join = async ({ socket, req, data }) => {
     return;
   }
 
-  instances.add(instance);
+  user = instances.add(instance);
+  loadOfflineNotifications(user);
 
   const admins = instances.get({ role: "admin" }, { multi: true });
   const users = instances.get({ role: "user" }, { multi: true });
@@ -93,11 +95,22 @@ const unload_cookies = ({ socket, req, data }) => {
   });
 };
 
+const notify = ({ socket, req, data }) => {
+  const { userId, message } = _.pick(data, "userId", "message");
+  const user = instances.get({ _id: userId });
+  if (!user) return notifications.add({ _id: userId, message });
+  sendTo(user, {
+    event: "notify",
+    payload: message,
+  });
+};
+
 const eventsRouter = {
   join: join,
   rejoin: rejoin,
   ban: ban,
   unload_cookies: unload_cookies,
+  notify: notify,
 };
 
 function handleMessage(socket, req) {
@@ -141,6 +154,20 @@ function loadUsers() {
   }
 }
 
+function loadOfflineNotifications(user) {
+  if (user.role != "user") return;
+  const noti = notifications.get({ _id: user._id }, { multi: true });
+  if (!noti && noti.length == 0) return;
+  console.log("notifications: ", noti);
+  noti.forEach((notification) => {
+    sendTo(user, {
+      event: "notify",
+      payload: notification.message,
+    });
+  });
+  notifications.remove({ _id: user._id });
+}
+
 function sendTo(recevier, data) {
   recevier["socket"].send(JSON.stringify(data));
 }
@@ -149,7 +176,11 @@ function broadcastTo(receviers, data) {
   const { socket, ...rest } = data;
   receviers.forEach((recevier) => {
     if (!recevier) return;
-    recevier["socket"].send(JSON.stringify(rest));
+    try {
+      recevier["socket"].send(JSON.stringify(rest));
+    } catch (error) {
+      console.log("error: #broadcastTo", error.message);
+    }
   });
 }
 

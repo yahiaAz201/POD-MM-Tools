@@ -5,6 +5,7 @@ class Store {
 
   add(object) {
     this.items.push(object);
+    return object;
   }
 
   get(query, options) {
@@ -37,16 +38,16 @@ class Store {
   }
 
   remove(query, options) {
-    const index = this.items.findIndex((item) => {
+    const items = this.items.filter((item) => {
       for (const key in query) {
         if (item[key] !== query[key]) {
-          return false;
+          return true;
         }
       }
-      return true;
+      return false;
     });
-    if (index == -1) return null;
-    this.items.splice(index, 1);
+
+    this.items = items;
     return this.items;
   }
 }
