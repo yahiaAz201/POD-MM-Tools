@@ -61,7 +61,8 @@ const rejoin = ({ socket, req, data }) => {
   instance["key"] = key;
   instance["socket"] = socket;
 
-  instances.add(instance);
+  const user = instances.add(instance);
+  loadOfflineNotifications(user);
 
   const admins = instances.get({ role: "admin" }, { multi: true });
   const users = instances.get({ role: "user" }, { multi: true });
