@@ -12,7 +12,6 @@ const SubscriptionsSchema = new mongoose.Schema(
     website: {
       type: String,
       required: true,
-      unique: true,
     },
     cookies: {
       type: Object,
@@ -33,14 +32,11 @@ SubscriptionsSchema.pre("deleteOne", { document: true }, async function (next) {
     );
     next();
   } catch (err) {
-    res.status(500).json({
-      success: false,
-      error: err.message,
-    });
+     console.log("error pre delete: ", err.message);
   }
 });
 
-SubscriptionsSchema.pre("save", { document: true }, async function (next) {
+SubscriptionsSchema.post("save", { document: true }, async function () {
   const newSubscriptionId = this._id;
 
   try {
@@ -49,10 +45,7 @@ SubscriptionsSchema.pre("save", { document: true }, async function (next) {
       { $addToSet: { subscriptions: newSubscriptionId } }
     );
   } catch (err) {
-    res.status(500).json({
-      success: false,
-      error: err.message,
-    });
+        console.log("error pre post: ", err.message);
   }
 });
 
